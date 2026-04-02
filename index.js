@@ -1,11 +1,19 @@
 import Fastify from "fastify";
 
-const app = Fastify();
+const app = Fastify({
+  logger: true
+});
+
+const YT_API_KEY = process.env.YT_API_KEY || "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30";
+const YT_COOKIE = process.env.YOUTUBE_COOKIE || "";
 
 app.get("/", async () => {
   return {
     ok: true,
-    message: "YouTube API Server Running"
+    message: "YouTube API Server Running",
+    endpoints: [
+      "/video/:id"
+    ]
   };
 });
 
@@ -14,30 +22,37 @@ app.get("/video/:id", async (req, reply) => {
     const { id } = req.params;
 
     const response = await fetch(
-      "https://www.youtube.com/youtubei/v1/player?key=AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30",
+      `https://www.youtube.com/youtubei/v1/player?key=${YT_API_KEY}`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-          "X-YouTube-Client-Name": "1",
-          "X-YouTube-Client-Version": "2.20260330.00.00",
-          ...(process.env.YOUTUBE_COOKIE
+          "User-Agent": "com.google.android.youtube/20.10.38",
+          "X-YouTube-Client-Name": "3",
+          "X-YouTube-Client-Version": "20.10.38",
+          ...(YT_COOKIE
             ? {
-                Cookie: process.env.YOUTUBE_COOKIE
+                Cookie: YT_COOKIE
               }
             : {})
         },
         body: JSON.stringify({
           context: {
             client: {
-              clientName: "WEB",
-              clientVersion: "2.20260330.00.00",
+              clientName: "ANDROID",
+              clientVersion: "20.10.38",
+              androidSdkVersion: 34,
               hl: "ja",
               gl: "JP"
             }
           },
+          playbackContext: {
+            contentPlaybackContext: {
+              html5Preference: "HTML5_PREF_WANTS"
+            }
+          },
+          contentCheckOk: true,
+          racyCheckOk: true,
           videoId: id
         })
       }
@@ -45,17 +60,14 @@ app.get("/video/:id", async (req, reply) => {
 
     const data = await response.json();
 
-    if (!response.ok) {
-      return reply.code(response.status).send({
-        ok: false,
-        status: response.status,
-        error: data
-      });
-    }
-
     return {
-      ok: true,
+      ok: response.ok,
       status: response.status,
+
+      playability: {
+        status: data.playabilityStatus?.status ?? null,
+        reason: data.playabilityStatus?.reason ?? null
+      },
 
       video: {
         id,
@@ -69,38 +81,33 @@ app.get("/video/:id", async (req, reply) => {
         thumbnails: data.videoDetails?.thumbnail?.thumbnails ?? []
       },
 
-      playability: data.playabilityStatus ?? null,
+      streams: {
+        hls: data.streamingData?.hlsManifestUrl ?? null,
+        dash: data.streamingData?.dashManifestUrl ?? null,
 
-      streamingData: {
-        hlsManifestUrl: data.streamingData?.hlsManifestUrl ?? null,
-        dashManifestUrl: data.streamingData?.dashManifestUrl ?? null,
-
-        formats:
+        muxed:
           data.streamingData?.formats?.map((f) => ({
             itag: f.itag,
             mimeType: f.mimeType,
-            bitrate: f.bitrate,
-            width: f.width,
-            height: f.height,
-            fps: f.fps,
-            quality: f.qualityLabel,
-            audioQuality: f.audioQuality,
-            approxDurationMs: f.approxDurationMs,
+            quality: f.qualityLabel ?? null,
+            bitrate: f.bitrate ?? null,
+            width: f.width ?? null,
+            height: f.height ?? null,
+            fps: f.fps ?? null,
             url: f.url ?? null,
             cipher: f.signatureCipher ?? f.cipher ?? null
           })) ?? [],
 
-        adaptiveFormats:
+        adaptive:
           data.streamingData?.adaptiveFormats?.map((f) => ({
             itag: f.itag,
             mimeType: f.mimeType,
-            bitrate: f.bitrate,
-            width: f.width,
-            height: f.height,
-            fps: f.fps,
-            quality: f.qualityLabel,
-            audioQuality: f.audioQuality,
-            approxDurationMs: f.approxDurationMs,
+            quality: f.qualityLabel ?? null,
+            bitrate: f.bitrate ?? null,
+            audioQuality: f.audioQuality ?? null,
+            width: f.width ?? null,
+            height: f.height ?? null,
+            fps: f.fps ?? null,
             url: f.url ?? null,
             cipher: f.signatureCipher ?? f.cipher ?? null
           })) ?? []
@@ -109,6 +116,8 @@ app.get("/video/:id", async (req, reply) => {
       raw: data
     };
   } catch (err) {
+    req.log.error(err);
+
     return reply.code(500).send({
       ok: false,
       error: String(err)
