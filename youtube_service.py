@@ -3,6 +3,8 @@ YouTube Service
 yt-dlp を使って動画・音楽・ライブ・ショートなどの情報とストリームURLを取得する
 """
 
+import os
+import tempfile
 import yt_dlp
 from typing import Optional
 from models import (
@@ -25,8 +27,20 @@ def _build_url(video_id: str) -> str:
     return f"https://www.youtube.com/watch?v={video_id}"
 
 
+import os
+import tempfile
+
 def _extract_info(url: str, opts: dict) -> dict:
     merged = {**BASE_OPTS, **opts}
+
+    # 環境変数からCookieを読み込む
+    cookies = os.environ.get("YOUTUBE_COOKIES")
+    if cookies:
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
+        tmp.write(cookies)
+        tmp.flush()
+        merged["cookiefile"] = tmp.name
+
     with yt_dlp.YoutubeDL(merged) as ydl:
         return ydl.extract_info(url, download=False)
 
