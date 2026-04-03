@@ -33,17 +33,19 @@ import tempfile
 def _extract_info(url: str, opts: dict) -> dict:
     merged = {**BASE_OPTS, **opts}
 
-    # 環境変数からCookieを読み込む
     cookies = os.environ.get("YOUTUBE_COOKIES")
     if cookies:
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
+        # Netscape形式のヘッダーが無ければ先頭に付ける
+        if not cookies.strip().startswith("# Netscape HTTP Cookie File"):
+            cookies = "# Netscape HTTP Cookie File\n" + cookies
         tmp.write(cookies)
         tmp.flush()
+        tmp.close()
         merged["cookiefile"] = tmp.name
 
     with yt_dlp.YoutubeDL(merged) as ydl:
         return ydl.extract_info(url, download=False)
-
 
 # ─── 動画情報取得 ──────────────────────────────────────────────────────────
 
