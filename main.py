@@ -49,8 +49,9 @@ def get_video_info(video_id: str):
     try:
         return yt.get_video_info(video_id)
     except Exception as e:
+        import traceback
+        print(traceback.format_exc())  # ← Renderのログに詳細を出力
         _handle_error(e)
-
 
 @app.get(
     "/video/{video_id}/formats",
