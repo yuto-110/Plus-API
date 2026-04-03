@@ -18,10 +18,10 @@ from models import (
 BASE_OPTS = {
     "quiet": True,
     "no_warnings": True,
-    "extract_flat": False,
     "nocheckcertificate": True,
+    "format": "bestvideo+bestaudio/best",  # デフォルトフォーマットを明示
+    "ignore_no_formats_error": True,        # フォーマットなしでもクラッシュしない
 }
-
 
 def _build_url(video_id: str) -> str:
     return f"https://www.youtube.com/watch?v={video_id}"
