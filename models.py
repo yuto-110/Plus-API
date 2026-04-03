@@ -2,7 +2,7 @@
 Pydantic モデル定義
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
@@ -33,9 +33,9 @@ class VideoInfo(BaseModel):
     thumbnail: Optional[str] = None
     is_live: bool = False
     is_short: bool = False
-    tags: list[str] = []
-    categories: list[str] = []
-    formats: list[FormatInfo] = []
+    tags: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    formats: list[FormatInfo] = Field(default_factory=list)
 
 
 class StreamInfo(BaseModel):
@@ -107,7 +107,7 @@ class ChannelInfo(BaseModel):
     thumbnail: Optional[str] = None
     banner: Optional[str] = None
     video_count: Optional[int] = None
-    recent_videos: list[SearchResult] = []
+    recent_videos: list[SearchResult] = Field(default_factory=list)
 
 
 # ─── トランスクリプト ──────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ class TranscriptInfo(BaseModel):
     language_code: str
     is_generated: bool
     is_translatable: bool
-    segments: list[TranscriptSegment]
+    segments: list[TranscriptSegment] = Field(default_factory=list)
     full_text: str
 
 
