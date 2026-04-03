@@ -108,7 +108,6 @@ def get_stream_url(
 ) -> StreamInfo:
     url = _build_url(video_id)
 
-    # フォーマット指定
     if ext:
         fmt = f"bestvideo[ext={ext}]+bestaudio[ext={ext}]/best[ext={ext}]/best"
     elif quality == "best":
@@ -116,20 +115,39 @@ def get_stream_url(
     elif quality == "worst":
         fmt = "worstvideo+worstaudio/worst"
     else:
-        fmt = quality  # 例: "137+140", "22" など直指定も可
+        fmt = quality
 
+    # format を上書きして取得
     info = _extract_info(url, {"format": fmt})
 
-    # マージ後URLまたはフォールバック
-    stream_url = info.get("url") or _pick_url_from_formats(info)
+    # requested_downloads があればそこから取る（マージ済みフォーマット）
+    requested = info.get("requested_downloads") or []
+    if requested:
+        best = requested[0]
+        stream_url = best.get("url", "")
+        selected_ext = best.get("ext", "")
+        format_id = best.get("format_id", "")
+        resolution = best.get("resolution") or best.get("format_note", "")
+    else:
+        # フォールバック: formats から映像か音声があるものを探す
+        formats = info.get("formats") or []
+        valid = [
+            f for f in formats
+            if (f.get("vcodec", "none") != "none") or (f.get("acodec", "none") != "none")
+        ]
+        best = valid[-1] if valid else {}
+        stream_url = best.get("url", "")
+        selected_ext = best.get("ext", info.get("ext", ""))
+        format_id = best.get("format_id", info.get("format_id", ""))
+        resolution = best.get("resolution") or best.get("format_note", "")
 
     return StreamInfo(
         id=info.get("id", video_id),
         title=info.get("title", ""),
         url=stream_url,
-        ext=info.get("ext", ""),
-        format_id=info.get("format_id", ""),
-        resolution=info.get("resolution") or info.get("format_note", ""),
+        ext=selected_ext,
+        format_id=format_id,
+        resolution=resolution,
         duration=info.get("duration"),
         is_live=info.get("is_live", False),
     )
