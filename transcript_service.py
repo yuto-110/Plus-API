@@ -33,9 +33,9 @@ def get_transcript(
 
         segments = [
             TranscriptSegment(
-                text=seg.get("text", ""),
-                start=seg.get("start", 0.0),
-                duration=seg.get("duration", 0.0),
+                text=getattr(seg, "text", seg.get("text", "") if isinstance(seg, dict) else ""),
+                start=getattr(seg, "start", seg.get("start", 0.0) if isinstance(seg, dict) else 0.0),
+                duration=getattr(seg, "duration", seg.get("duration", 0.0) if isinstance(seg, dict) else 0.0),
             )
             for seg in raw
         ]
