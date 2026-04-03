@@ -120,6 +120,16 @@ def get_stream_url(
     # format を上書きして取得
     info = _extract_info(url, {"format": fmt})
 
+    # ↓ デバッグ用：一時的に追加
+    import json
+    print("DEBUG formats count:", len(info.get("formats") or []))
+    print("DEBUG requested_downloads:", info.get("requested_downloads"))
+    print("DEBUG info.url:", info.get("url"))
+    print("DEBUG format keys sample:", [
+        {k: f.get(k) for k in ["format_id", "ext", "vcodec", "acodec", "url"]}
+        for f in (info.get("formats") or [])[-3:]  # 最後の3件だけ
+    ])
+
     # requested_downloads があればそこから取る（マージ済みフォーマット）
     requested = info.get("requested_downloads") or []
     if requested:
