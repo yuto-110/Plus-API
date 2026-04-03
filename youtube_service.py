@@ -65,8 +65,8 @@ def get_video_info(video_id: str) -> VideoInfo:
         thumbnail=info.get("thumbnail"),
         is_live=info.get("is_live", False),
         is_short=_is_short(info),
-        tags=info.get("tags", []),
-        categories=info.get("categories", []),
+        tags=info.get("tags") or [],
+        categories=info.get("categories") or [],
         formats=formats,
     )
 
@@ -225,8 +225,8 @@ def search_videos(
 ) -> list[SearchResult]:
     type_map = {
         "video": "ytsearch",
-        "channel": "ytsearchtype:channel",
-        "playlist": "ytsearchtype:playlist",
+        "channel": "ytsearch",   # チャンネル検索はytsearchで代用
+        "playlist": "ytsearch",
     }
     prefix = type_map.get(search_type, "ytsearch")
     search_url = f"{prefix}{max_results}:{query}"
