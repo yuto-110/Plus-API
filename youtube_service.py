@@ -70,7 +70,7 @@ def _best_av_url(info: dict) -> str:
 def get_video_info(video_id: str) -> VideoInfo:
     url = _build_url(video_id)
     # フォーマット指定なしで全フォーマット取得
-    info = _extract_info(url, {"skip_download": True})
+    info = _extract_info(url, {})
 
     formats = [
         FormatInfo(
@@ -135,15 +135,14 @@ def get_stream_url(
     else:
         fmt = quality
 
-    info = _extract_info(url, {"format": fmt, "skip_download": True})
-
+    info = _extract_info(url, {"format": fmt})
     # まずフォーマット一覧から映像/音声URLを取得
     stream_url = _best_av_url(info)
 
     # フォールバック: YouTube Music URLで再試行
     if not stream_url:
         url_music = _build_url(video_id, music=True)
-        info = _extract_info(url_music, {"format": fmt, "skip_download": True})
+        info = _extract_info(url_music, {"format": fmt})
         stream_url = _best_av_url(info)
 
     # フォールバック: info.url
@@ -185,8 +184,7 @@ def get_audio_stream(
     else:
         format_str = f"bestaudio[ext={fmt}]/bestaudio/best"
 
-    info = _extract_info(url, {"format": format_str, "skip_download": True})
-
+    info = _extract_info(url, {"format": format_str})
     # 音声フォーマットを探す
     audio_formats = [
         f for f in (info.get("formats") or [])
@@ -205,7 +203,7 @@ def get_audio_stream(
     # YouTube Music URLで取れなければ通常URLで再試行
     if not stream_url:
         url_yt = _build_url(video_id)
-        info = _extract_info(url_yt, {"format": format_str, "skip_download": True})
+        info = _extract_info(url_yt, {"format": format_str})
         audio_formats = [
             f for f in (info.get("formats") or [])
             if f.get("acodec", "none") != "none"
@@ -351,7 +349,7 @@ def get_channel_info(channel_id: str, include_videos: bool = False, max_videos: 
 
 def list_formats(video_id: str) -> list[FormatInfo]:
     url = _build_url(video_id)
-    info = _extract_info(url, {"skip_download": True})
+    info = _extract_info(url, {})
 
     return [
         FormatInfo(
