@@ -19,9 +19,8 @@ BASE_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "nocheckcertificate": True,
-    "format": "bestvideo+bestaudio/best",  # デフォルトフォーマットを明示
-    "ignore_no_formats_error": True,        # フォーマットなしでもクラッシュしない
 }
+
 
 def _build_url(video_id: str, music: bool = False) -> str:
     if music:
@@ -29,16 +28,13 @@ def _build_url(video_id: str, music: bool = False) -> str:
     return f"https://www.youtube.com/watch?v={video_id}"
 
 
-import os
-import tempfile
-
 def _extract_info(url: str, opts: dict) -> dict:
     merged = {**BASE_OPTS, **opts}
 
+    # 環境変数からCookieを読み込む
     cookies = os.environ.get("YOUTUBE_COOKIES")
     if cookies:
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
-        # Netscape形式のヘッダーが無ければ先頭に付ける
         if not cookies.strip().startswith("# Netscape HTTP Cookie File"):
             cookies = "# Netscape HTTP Cookie File\n" + cookies
         tmp.write(cookies)
@@ -49,11 +45,32 @@ def _extract_info(url: str, opts: dict) -> dict:
     with yt_dlp.YoutubeDL(merged) as ydl:
         return ydl.extract_info(url, download=False)
 
+
+def _has_av_formats(info: dict) -> bool:
+    """映像か音声のフォーマットが存在するか確認"""
+    return any(
+        f.get("vcodec", "none") != "none" or f.get("acodec", "none") != "none"
+        for f in (info.get("formats") or [])
+    )
+
+
+def _best_av_url(info: dict) -> str:
+    """映像か音声があるフォーマットの中で最後（best）のURLを返す"""
+    valid = [
+        f for f in (info.get("formats") or [])
+        if f.get("vcodec", "none") != "none" or f.get("acodec", "none") != "none"
+    ]
+    if not valid:
+        return ""
+    return valid[-1].get("url", "")
+
+
 # ─── 動画情報取得 ──────────────────────────────────────────────────────────
 
 def get_video_info(video_id: str) -> VideoInfo:
     url = _build_url(video_id)
-    info = _extract_info(url, {})
+    # フォーマット指定なしで全フォーマット取得
+    info = _extract_info(url, {"skip_download": True})
 
     formats = [
         FormatInfo(
@@ -90,7 +107,6 @@ def get_video_info(video_id: str) -> VideoInfo:
 
 
 def _is_short(info: dict) -> bool:
-    """ショート動画かどうかを判定"""
     duration = info.get("duration") or 0
     webpage_url = info.get("webpage_url", "")
     original_url = info.get("original_url", "")
@@ -119,74 +135,39 @@ def get_stream_url(
     else:
         fmt = quality
 
-    # format を上書きして取得
-    info = _extract_info(url, {"format": fmt})
-    if not (info.get("requested_downloads") or _has_av_formats(info)):
+    info = _extract_info(url, {"format": fmt, "skip_download": True})
+
+    # まずフォーマット一覧から映像/音声URLを取得
+    stream_url = _best_av_url(info)
+
+    # フォールバック: YouTube Music URLで再試行
+    if not stream_url:
         url_music = _build_url(video_id, music=True)
-        info = _extract_info(url_music, {"format": fmt})
+        info = _extract_info(url_music, {"format": fmt, "skip_download": True})
+        stream_url = _best_av_url(info)
 
-    # ↓ デバッグ用：一時的に追加
-    import json
-    print("DEBUG formats count:", len(info.get("formats") or []))
-    print("DEBUG requested_downloads:", info.get("requested_downloads"))
-    print("DEBUG info.url:", info.get("url"))
-    print("DEBUG format keys sample:", [
-        {k: f.get(k) for k in ["format_id", "ext", "vcodec", "acodec", "url"]}
-        for f in (info.get("formats") or [])[-3:]  # 最後の3件だけ
-    ])
+    # フォールバック: info.url
+    if not stream_url:
+        stream_url = info.get("url", "")
 
-    # requested_downloads があればそこから取る（マージ済みフォーマット）
-    requested = info.get("requested_downloads") or []
-    if requested:
-        best = requested[0]
-        stream_url = best.get("url", "")
-        selected_ext = best.get("ext", "")
-        format_id = best.get("format_id", "")
-        resolution = best.get("resolution") or best.get("format_note", "")
-    else:
-        # フォールバック: formats から映像か音声があるものを探す
-        formats = info.get("formats") or []
-        valid = [
-            f for f in formats
-            if (f.get("vcodec", "none") != "none") or (f.get("acodec", "none") != "none")
-        ]
-        best = valid[-1] if valid else {}
-        stream_url = best.get("url", "")
-        selected_ext = best.get("ext", info.get("ext", ""))
-        format_id = best.get("format_id", info.get("format_id", ""))
-        resolution = best.get("resolution") or best.get("format_note", "")
+    # URLに使ったフォーマット情報を取得
+    valid_formats = [
+        f for f in (info.get("formats") or [])
+        if f.get("vcodec", "none") != "none" or f.get("acodec", "none") != "none"
+    ]
+    best_fmt = valid_formats[-1] if valid_formats else {}
 
     return StreamInfo(
         id=info.get("id", video_id),
         title=info.get("title", ""),
         url=stream_url,
-        ext=selected_ext,
-        format_id=format_id,
-        resolution=resolution,
+        ext=best_fmt.get("ext") or info.get("ext", ""),
+        format_id=best_fmt.get("format_id") or info.get("format_id", ""),
+        resolution=best_fmt.get("resolution") or best_fmt.get("format_note") or info.get("resolution", ""),
         duration=info.get("duration"),
         is_live=info.get("is_live", False),
     )
 
-
-def _pick_url_from_formats(info: dict) -> str:
-    """フォーマットリストから最善のURLを選ぶ（映像または音声があるものだけ）"""
-    formats = info.get("formats", [])
-    # 映像か音声のコーデックがあるものだけ対象にする
-    valid = [
-        f for f in formats
-        if (f.get("vcodec") and f.get("vcodec") != "none")
-        or (f.get("acodec") and f.get("acodec") != "none")
-    ]
-    if not valid:
-        return ""
-    return valid[-1].get("url", "")
-
-def _has_av_formats(info: dict) -> bool:
-    """映像か音声のフォーマットが存在するか確認"""
-    return any(
-        f.get("vcodec", "none") != "none" or f.get("acodec", "none") != "none"
-        for f in (info.get("formats") or [])
-    )
 
 # ─── 音声ストリームURL取得（YouTube Music / 音楽動画） ─────────────────────
 
@@ -194,9 +175,9 @@ def get_audio_stream(
     video_id: str,
     fmt: str = "m4a",
 ) -> AudioStreamInfo:
+    # YouTube Music URLを優先
     url = _build_url(video_id, music=True)
 
-    # m4a 優先、なければ bestaudio
     if fmt == "m4a":
         format_str = "bestaudio[ext=m4a]/bestaudio/best"
     elif fmt == "mp3":
@@ -204,15 +185,38 @@ def get_audio_stream(
     else:
         format_str = f"bestaudio[ext={fmt}]/bestaudio/best"
 
-    info = _extract_info(url, {"format": format_str})
+    info = _extract_info(url, {"format": format_str, "skip_download": True})
 
-    # 選択されたフォーマットの情報
-    selected = _get_selected_format(info, format_str)
+    # 音声フォーマットを探す
+    audio_formats = [
+        f for f in (info.get("formats") or [])
+        if f.get("acodec", "none") != "none" and f.get("vcodec", "none") == "none"
+    ]
+    # なければ映像込みでも可
+    if not audio_formats:
+        audio_formats = [
+            f for f in (info.get("formats") or [])
+            if f.get("acodec", "none") != "none"
+        ]
+
+    selected = audio_formats[-1] if audio_formats else {}
+    stream_url = selected.get("url") or info.get("url", "")
+
+    # YouTube Music URLで取れなければ通常URLで再試行
+    if not stream_url:
+        url_yt = _build_url(video_id)
+        info = _extract_info(url_yt, {"format": format_str, "skip_download": True})
+        audio_formats = [
+            f for f in (info.get("formats") or [])
+            if f.get("acodec", "none") != "none"
+        ]
+        selected = audio_formats[-1] if audio_formats else {}
+        stream_url = selected.get("url") or info.get("url", "")
 
     return AudioStreamInfo(
         id=info.get("id", video_id),
         title=info.get("title", ""),
-        url=selected.get("url") or info.get("url", ""),
+        url=stream_url,
         ext=selected.get("ext", fmt),
         format_id=selected.get("format_id", ""),
         acodec=selected.get("acodec", ""),
@@ -228,29 +232,18 @@ def get_audio_stream(
     )
 
 
-def _get_selected_format(info: dict, format_str: str) -> dict:
-    """選択されたフォーマットの詳細を取得"""
-    requested_fmt_id = info.get("format_id", "")
-    for f in info.get("formats", []):
-        if f.get("format_id") == requested_fmt_id:
-            return f
-    # フォールバック: 最後のフォーマット
-    formats = info.get("formats", [])
-    return formats[-1] if formats else {}
-
-
 # ─── ライブストリーム取得 ──────────────────────────────────────────────────
 
 def get_live_stream(video_id: str) -> LiveStreamInfo:
     url = _build_url(video_id)
     info = _extract_info(url, {
         "format": "best[protocol=m3u8]/best",
+        "skip_download": True,
     })
 
     if not info.get("is_live"):
         raise ValueError(f"Video {video_id} is not a live stream")
 
-    # HLS/DASH マニフェストURLを探す
     hls_url = None
     dash_url = None
     for f in info.get("formats", []):
@@ -281,15 +274,10 @@ def get_live_stream(video_id: str) -> LiveStreamInfo:
 def search_videos(
     query: str,
     max_results: int = 10,
-    search_type: str = "video",  # video | channel | playlist
+    search_type: str = "video",
 ) -> list[SearchResult]:
-    type_map = {
-        "video": "ytsearch",
-        "channel": "ytsearch",   # チャンネル検索はytsearchで代用
-        "playlist": "ytsearch",
-    }
-    prefix = type_map.get(search_type, "ytsearch")
-    search_url = f"{prefix}{max_results}:{query}"
+    # チャンネル・プレイリストもytsearchで代用（yt-dlpの互換性のため）
+    search_url = f"ytsearch{max_results}:{query}"
 
     info = _extract_info(search_url, {
         "extract_flat": True,
@@ -316,7 +304,6 @@ def search_videos(
 # ─── チャンネル情報 ────────────────────────────────────────────────────────
 
 def get_channel_info(channel_id: str, include_videos: bool = False, max_videos: int = 20) -> ChannelInfo:
-    # channel_id は @handle または UCxxx 形式
     if channel_id.startswith("UC") or channel_id.startswith("@"):
         url = f"https://www.youtube.com/{channel_id}" if channel_id.startswith("@") else \
               f"https://www.youtube.com/channel/{channel_id}"
@@ -324,7 +311,7 @@ def get_channel_info(channel_id: str, include_videos: bool = False, max_videos: 
         url = f"https://www.youtube.com/@{channel_id}"
 
     opts = {
-        "extract_flat": not include_videos,
+        "extract_flat": True,
         "skip_download": True,
     }
     if include_videos:
@@ -364,7 +351,7 @@ def get_channel_info(channel_id: str, include_videos: bool = False, max_videos: 
 
 def list_formats(video_id: str) -> list[FormatInfo]:
     url = _build_url(video_id)
-    info = _extract_info(url, {"listformats": False})
+    info = _extract_info(url, {"skip_download": True})
 
     return [
         FormatInfo(
