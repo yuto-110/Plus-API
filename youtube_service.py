@@ -23,7 +23,9 @@ BASE_OPTS = {
     "ignore_no_formats_error": True,        # フォーマットなしでもクラッシュしない
 }
 
-def _build_url(video_id: str) -> str:
+def _build_url(video_id: str, music: bool = False) -> str:
+    if music:
+        return f"https://music.youtube.com/watch?v={video_id}"
     return f"https://www.youtube.com/watch?v={video_id}"
 
 
@@ -119,6 +121,9 @@ def get_stream_url(
 
     # format を上書きして取得
     info = _extract_info(url, {"format": fmt})
+    if not (info.get("requested_downloads") or _has_av_formats(info)):
+        url_music = _build_url(video_id, music=True)
+        info = _extract_info(url_music, {"format": fmt})
 
     # ↓ デバッグ用：一時的に追加
     import json
@@ -176,6 +181,12 @@ def _pick_url_from_formats(info: dict) -> str:
         return ""
     return valid[-1].get("url", "")
 
+def _has_av_formats(info: dict) -> bool:
+    """映像か音声のフォーマットが存在するか確認"""
+    return any(
+        f.get("vcodec", "none") != "none" or f.get("acodec", "none") != "none"
+        for f in (info.get("formats") or [])
+    )
 
 # ─── 音声ストリームURL取得（YouTube Music / 音楽動画） ─────────────────────
 
@@ -183,7 +194,7 @@ def get_audio_stream(
     video_id: str,
     fmt: str = "m4a",
 ) -> AudioStreamInfo:
-    url = _build_url(video_id)
+    url = _build_url(video_id, music=True)
 
     # m4a 優先、なければ bestaudio
     if fmt == "m4a":
