@@ -136,12 +136,17 @@ def get_stream_url(
 
 
 def _pick_url_from_formats(info: dict) -> str:
-    """フォーマットリストから最善のURLを選ぶ"""
+    """フォーマットリストから最善のURLを選ぶ（映像または音声があるものだけ）"""
     formats = info.get("formats", [])
-    if not formats:
+    # 映像か音声のコーデックがあるものだけ対象にする
+    valid = [
+        f for f in formats
+        if (f.get("vcodec") and f.get("vcodec") != "none")
+        or (f.get("acodec") and f.get("acodec") != "none")
+    ]
+    if not valid:
         return ""
-    # 最後（通常 best）のフォーマットのURLを返す
-    return formats[-1].get("url", "")
+    return valid[-1].get("url", "")
 
 
 # ─── 音声ストリームURL取得（YouTube Music / 音楽動画） ─────────────────────
