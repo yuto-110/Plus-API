@@ -19,7 +19,6 @@ BASE_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "nocheckcertificate": True,
-    "ignore_no_formats_error": True,
 }
 
 
@@ -135,8 +134,7 @@ def get_stream_url(
         fmt = quality
 
     info = _extract_info(url, {"format": fmt})
-    # まずフォーマット一覧から映像/音声URLを取得
-    stream_url = _best_av_url(info)
+    stream_url = info.get("url") or _pick_url_from_formats(info)
 
     # フォールバック: YouTube Music URLで再試行
     if not stream_url:
