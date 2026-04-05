@@ -22,7 +22,7 @@ BASE_OPTS = {
     "ignore_no_formats_error": True,
     "extractor_args": {
         "youtube": {
-            "player_client": ["tv_embedded"],
+            "player_client": ["mweb"],
         }
     },
 }
