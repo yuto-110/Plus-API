@@ -19,6 +19,7 @@ BASE_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "nocheckcertificate": True,
+    "ignore_no_formats_error": True,
 }
 
 
@@ -30,8 +31,6 @@ def _build_url(video_id: str, music: bool = False) -> str:
 
 def _extract_info(url: str, opts: dict) -> dict:
     merged = {**BASE_OPTS, **opts}
-
-    # 環境変数からCookieを読み込む
     cookies = os.environ.get("YOUTUBE_COOKIES")
     if cookies:
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
@@ -41,10 +40,8 @@ def _extract_info(url: str, opts: dict) -> dict:
         tmp.flush()
         tmp.close()
         merged["cookiefile"] = tmp.name
-
     with yt_dlp.YoutubeDL(merged) as ydl:
         return ydl.extract_info(url, download=False)
-
 
 def _has_av_formats(info: dict) -> bool:
     """映像か音声のフォーマットが存在するか確認"""
