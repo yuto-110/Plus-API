@@ -40,6 +40,8 @@ def _extract_info(url: str, opts: dict) -> dict:
         tmp.flush()
         tmp.close()
         merged["cookiefile"] = tmp.name
+    print("DEBUG cookiefile:", merged.get("cookiefile"))
+    print("DEBUG YOUTUBE_COOKIES exists:", bool(os.environ.get("YOUTUBE_COOKIES")))
     with yt_dlp.YoutubeDL(merged) as ydl:
         return ydl.extract_info(url, download=False)
 
