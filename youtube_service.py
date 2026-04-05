@@ -68,7 +68,10 @@ def _best_av_url(info: dict) -> str:
 def get_video_info(video_id: str) -> VideoInfo:
     url = _build_url(video_id)
     # フォーマット指定なしで全フォーマット取得
-    info = _extract_info(url, {})
+    info = _extract_info(url, {
+        "format": "bestaudio/bestvideo/best",
+        "ignore_no_formats_error": True,
+    })
 
     formats = [
         FormatInfo(
