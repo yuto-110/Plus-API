@@ -1,0 +1,6 @@
+node_modules
+server.log
+*.txt
+*.md
+!README.md
+!API_Documentation.md
