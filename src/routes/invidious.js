@@ -71,9 +71,36 @@ router.get('/search/filters', (req, res) => {
 router.get('/videos/:id', (req, res) => proxy(res, `/videos/${req.params.id}`));
 
 // GET /api/videos/:id/live
-// ライブ配信中かどうかとHLS(m3u8)を返す。Invidious優先、全滅時のみyt-dlpにフォールバック。
+// ライブ配信中かどうかとHLS(m3u8)を返す。yt-dlp優先(生のgooglevideo.com URL)、
+// 失敗時のみInvidiousにフォールバック(インスタンス経由のプロキシURLになることがある)。
 router.get('/videos/:id/live', async (req, res) => {
   const { id } = req.params;
+
+  // yt-dlpを優先する: YouTube本家から直接取得した生のgooglevideo.comのURLが返るため、
+  // Invidiousインスタンス経由のプロキシURL(再生できないことがある)より再生が安定する。
+  // Invidiousは「is_liveかどうかの確認」と「タイトル等のメタデータ補完」の役割に回す。
+  if (isValidVideoId(id)) {
+    try {
+      const info = await getLiveInfo(buildWatchUrl(id));
+      if (!info.is_live) {
+        return res.json({ videoId: id, isLive: false });
+      }
+      return res.json({
+        videoId: id,
+        title: info.title,
+        channel: info.uploader,
+        isLive: true,
+        hlsUrl: info.url, // ← manifest.googlevideo.com の生URL
+        viewers: info.concurrent_view_count,
+        source: 'yt-dlp',
+      });
+    } catch {
+      // yt-dlpが失敗(bot判定など) → Invidiousへフォールバック
+    }
+  } else {
+    return res.status(400).json({ error: '不正な動画IDです' });
+  }
+
   try {
     const data = await raceRequest(`/videos/${id}`);
     if (data.liveNow) {
@@ -82,33 +109,12 @@ router.get('/videos/:id/live', async (req, res) => {
         title: data.title,
         channel: data.author,
         isLive: true,
-        hlsUrl: data.hlsUrl,
+        hlsUrl: data.hlsUrl, // ← インスタンス次第でプロキシURLの場合あり
         viewers: data.viewCount,
         source: 'invidious',
       });
     }
     return res.json({ videoId: id, isLive: false });
-  } catch {
-    // Invidiousが全滅 → yt-dlpへフォールバック
-  }
-
-  if (!isValidVideoId(id)) {
-    return res.status(400).json({ error: '不正な動画IDです' });
-  }
-  try {
-    const info = await getLiveInfo(buildWatchUrl(id));
-    if (!info.is_live) {
-      return res.json({ videoId: id, isLive: false });
-    }
-    return res.json({
-      videoId: id,
-      title: info.title,
-      channel: info.uploader,
-      isLive: true,
-      hlsUrl: info.url,
-      viewers: info.concurrent_view_count,
-      source: 'yt-dlp',
-    });
   } catch (err) {
     return res.status(502).json({ error: `ライブ情報の取得に失敗しました: ${err.message}` });
   }
