@@ -6,11 +6,16 @@
 // 生きていそうなインスタンス一覧。稼働状況は https://api.invidious.io/ で確認できるので
 // 定期的に見直すこと。先頭に近いものほど優先的に試される。
 export const INVIDIOUS_INSTANCES = [
-  'https://inv.nadeko.net',
-  'https://invidious.f5.si',
-  'https://yewtu.be',
-  'https://iv.ggtyler.dev',
-  'https://invidious.jing.rocks',
+  "https://invidious.ritoge.com",
+  "https://yt.omada.cafe",
+  "https://invidious.darkness.services",
+  "https://invidious.f5.si",
+  "https://invidious.ducks.party",
+  "https://y.com.sb",
+  "https://super8.absturztau.be",
+  "https://inv.zoomerville.com",
+  "https://invidious.nerdvpn.de",
+  "https://inv.thepixora.com",
 ];
 
 const REQUEST_TIMEOUT_MS = 6000;
