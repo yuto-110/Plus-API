@@ -59,13 +59,21 @@ export async function getAllStreamUrls(targetUrl) {
  * 動画がライブ配信中かどうか、is_liveやconcurrent_view_countなどの詳細を取得する。
  */
 export async function getLiveInfo(targetUrl) {
-  const { stdout } = await execFilePromise(
-    'yt-dlp',
-    ['-j', targetUrl, '--no-warnings', '--js-runtime', 'deno'],
-    { env: ENV_WITH_DENO, timeout: 20_000 }
-  );
-  return JSON.parse(stdout.trim());
+  try {
+    const { stdout } = await execFilePromise(
+      'yt-dlp',
+      ['-j', targetUrl, '--no-warnings', '--js-runtime', 'deno'],
+      { env: ENV_WITH_DENO, timeout: 20_000 }
+    );
+    return JSON.parse(stdout.trim());
+  } catch (err) {
+    // execFileのエラーにはstderrが載っているので、そのまま呼び出し元に伝える
+    const wrapped = new Error(err.message);
+    wrapped.stderr = err.stderr;
+    throw wrapped;
+  }
 }
+
 
 /**
  * キーワード検索(yt-dlpのytsearch)。Invidiousが全滅した場合のフォールバック用。
