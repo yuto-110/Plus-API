@@ -8,6 +8,7 @@ import { Router } from 'express';
 import { raceRequest } from '../lib/invidious.js';
 import { isValidVideoId } from '../lib/ytdlp.js';
 import { getInnertube } from '../lib/innertube.js';
+import { getPipedStreamInfo } from '../lib/piped.js';
 
 export const router = Router();
 
