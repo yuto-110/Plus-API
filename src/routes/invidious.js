@@ -6,7 +6,8 @@
 
 import { Router } from 'express';
 import { raceRequest } from '../lib/invidious.js';
-import { isValidVideoId, buildWatchUrl, getLiveInfo, searchViaYtdlp } from '../lib/ytdlp.js';
+import { isValidVideoId } from '../lib/ytdlp.js';
+import { getInnertube } from '../lib/innertube.js';
 
 export const router = Router();
 
@@ -71,8 +72,8 @@ router.get('/search/filters', (req, res) => {
 router.get('/videos/:id', (req, res) => proxy(res, `/videos/${req.params.id}`));
 
 // GET /api/videos/:id/live
-// ライブ配信中かどうかとHLS(m3u8)を返す。yt-dlpのみを使用(Invidiousへのフォールバックなし)。
-// 失敗した場合は原因調査のため、yt-dlpの生エラーメッセージをそのまま返す。
+// ライブ配信中かどうかとHLS(m3u8)を返す。youtubei.js(TVクライアント)のみ使用。
+// TVクライアントはシグネチャ復号(JS実行)が不要なため、yt-dlpよりbot判定に引っかかりにくい。
 router.get('/videos/:id/live', async (req, res) => {
   const { id } = req.params;
 
@@ -81,38 +82,34 @@ router.get('/videos/:id/live', async (req, res) => {
   }
 
   try {
-    const info = await getLiveInfo(buildWatchUrl(id));
+    const yt = getInnertube();
+    const info = await yt.getInfo(id, { client: 'TV' });
 
-    if (!info.is_live) {
+    if (!info.basic_info.is_live) {
       return res.json({ videoId: id, isLive: false });
     }
 
-    // 'best' で選ばれたURL(通常はHLSマスターマニフェスト)に加えて、
-    // 実際に利用可能なフォーマット一覧も返す。デバッグ用にHLS系だけ抜き出す。
-    const hlsFormats = (info.formats || [])
-      .filter((f) => f.protocol === 'm3u8' || f.protocol === 'm3u8_native')
-      .map((f) => ({
-        formatId: f.format_id,
-        resolution: f.resolution,
-        url: f.url,
-      }));
+    const hlsUrl = info.streaming_data?.hls_manifest_url;
+    if (!hlsUrl) {
+      return res.status(502).json({
+        error: 'ライブですが、HLSマニフェストURLを取得できませんでした',
+        detail: 'streaming_data.hls_manifest_url が空でした',
+      });
+    }
 
     return res.json({
       videoId: id,
-      title: info.title,
-      channel: info.uploader,
+      title: info.basic_info.title,
+      channel: info.basic_info.author,
       isLive: true,
-      hlsUrl: info.url, // 'best'選択時のURL
-      hlsFormats,        // 利用可能なHLSフォーマット一覧(こちらから選び直すことも可能)
-      viewers: info.concurrent_view_count,
-      source: 'yt-dlp',
+      hlsUrl,
+      viewers: info.basic_info.view_count,
+      source: 'youtubei.js',
     });
   } catch (err) {
-    // ここでInvidiousに逃がさず、実際のエラーをそのまま返す(原因特定用)
     return res.status(502).json({
-      error: 'yt-dlpでのライブ情報取得に失敗しました',
+      error: 'ライブ情報の取得に失敗しました',
       detail: err.message,
-      stderr: err.stderr ?? null,
     });
   }
 });
