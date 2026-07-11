@@ -71,54 +71,52 @@ router.get('/search/filters', (req, res) => {
 router.get('/videos/:id', (req, res) => proxy(res, `/videos/${req.params.id}`));
 
 // GET /api/videos/:id/live
-// ライブ配信中かどうかとHLS(m3u8)を返す。yt-dlp優先(生のgooglevideo.com URL)、
-// 失敗時のみInvidiousにフォールバック(インスタンス経由のプロキシURLになることがある)。
+// ライブ配信中かどうかとHLS(m3u8)を返す。yt-dlpのみを使用(Invidiousへのフォールバックなし)。
+// 失敗した場合は原因調査のため、yt-dlpの生エラーメッセージをそのまま返す。
 router.get('/videos/:id/live', async (req, res) => {
   const { id } = req.params;
 
-  // yt-dlpを優先する: YouTube本家から直接取得した生のgooglevideo.comのURLが返るため、
-  // Invidiousインスタンス経由のプロキシURL(再生できないことがある)より再生が安定する。
-  // Invidiousは「is_liveかどうかの確認」と「タイトル等のメタデータ補完」の役割に回す。
-  if (isValidVideoId(id)) {
-    try {
-      const info = await getLiveInfo(buildWatchUrl(id));
-      if (!info.is_live) {
-        return res.json({ videoId: id, isLive: false });
-      }
-      return res.json({
-        videoId: id,
-        title: info.title,
-        channel: info.uploader,
-        isLive: true,
-        hlsUrl: info.url, // ← manifest.googlevideo.com の生URL
-        viewers: info.concurrent_view_count,
-        source: 'yt-dlp',
-      });
-    } catch {
-      // yt-dlpが失敗(bot判定など) → Invidiousへフォールバック
-    }
-  } else {
+  if (!isValidVideoId(id)) {
     return res.status(400).json({ error: '不正な動画IDです' });
   }
 
   try {
-    const data = await raceRequest(`/videos/${id}`);
-    if (data.liveNow) {
-      return res.json({
-        videoId: id,
-        title: data.title,
-        channel: data.author,
-        isLive: true,
-        hlsUrl: data.hlsUrl, // ← インスタンス次第でプロキシURLの場合あり
-        viewers: data.viewCount,
-        source: 'invidious',
-      });
+    const info = await getLiveInfo(buildWatchUrl(id));
+
+    if (!info.is_live) {
+      return res.json({ videoId: id, isLive: false });
     }
-    return res.json({ videoId: id, isLive: false });
+
+    // 'best' で選ばれたURL(通常はHLSマスターマニフェスト)に加えて、
+    // 実際に利用可能なフォーマット一覧も返す。デバッグ用にHLS系だけ抜き出す。
+    const hlsFormats = (info.formats || [])
+      .filter((f) => f.protocol === 'm3u8' || f.protocol === 'm3u8_native')
+      .map((f) => ({
+        formatId: f.format_id,
+        resolution: f.resolution,
+        url: f.url,
+      }));
+
+    return res.json({
+      videoId: id,
+      title: info.title,
+      channel: info.uploader,
+      isLive: true,
+      hlsUrl: info.url, // 'best'選択時のURL
+      hlsFormats,        // 利用可能なHLSフォーマット一覧(こちらから選び直すことも可能)
+      viewers: info.concurrent_view_count,
+      source: 'yt-dlp',
+    });
   } catch (err) {
-    return res.status(502).json({ error: `ライブ情報の取得に失敗しました: ${err.message}` });
+    // ここでInvidiousに逃がさず、実際のエラーをそのまま返す(原因特定用)
+    return res.status(502).json({
+      error: 'yt-dlpでのライブ情報取得に失敗しました',
+      detail: err.message,
+      stderr: err.stderr ?? null,
+    });
   }
 });
+
 
 // GET /api/comments/:id
 router.get('/comments/:id', (req, res) => {
