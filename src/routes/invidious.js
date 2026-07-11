@@ -73,8 +73,8 @@ router.get('/search/filters', (req, res) => {
 router.get('/videos/:id', (req, res) => proxy(res, `/videos/${req.params.id}`));
 
 // GET /api/videos/:id/live
-// ライブ配信中かどうかとHLS(m3u8)を返す。youtubei.js(TVクライアント)のみ使用。
-// TVクライアントはシグネチャ復号(JS実行)が不要なため、yt-dlpよりbot判定に引っかかりにくい。
+// ライブ配信中かどうかとHLS(m3u8)を返す。
+// 優先順位: Piped → youtubei.js(TV) → youtubei.js(WEB)
 router.get('/videos/:id/live', async (req, res) => {
   const { id } = req.params;
 
@@ -82,38 +82,55 @@ router.get('/videos/:id/live', async (req, res) => {
     return res.status(400).json({ error: '不正な動画IDです' });
   }
 
+  const attempts = [];
+
+  // 1. Piped
   try {
-    const yt = getInnertube();
-    const info = await yt.getInfo(id, { client: 'TV' });
-
-    if (!info.basic_info.is_live) {
-      return res.json({ videoId: id, isLive: false });
-    }
-
-    const hlsUrl = info.streaming_data?.hls_manifest_url;
-    if (!hlsUrl) {
-      return res.status(502).json({
-        error: 'ライブですが、HLSマニフェストURLを取得できませんでした',
-        detail: 'streaming_data.hls_manifest_url が空でした',
+    const data = await getPipedStreamInfo(id);
+    attempts.push({ source: 'piped', hls: data.hls ?? null });
+    if (data.hls) {
+      return res.json({
+        videoId: id,
+        title: data.title,
+        channel: data.uploader,
+        isLive: true,
+        hlsUrl: data.hls,
+        viewers: data.views,
+        source: 'piped',
       });
     }
-
-    return res.json({
-      videoId: id,
-      title: info.basic_info.title,
-      channel: info.basic_info.author,
-      isLive: true,
-      hlsUrl,
-      viewers: info.basic_info.view_count,
-      source: 'youtubei.js',
-    });
   } catch (err) {
-    return res.status(502).json({
-      error: 'ライブ情報の取得に失敗しました',
-      detail: err.message,
-    });
+    attempts.push({ source: 'piped', error: err.message });
   }
+
+  // 2. youtubei.js (TV → WEB)
+  const yt = getInnertube();
+  for (const client of ['TV', 'WEB']) {
+    try {
+      const info = await yt.getInfo(id, { client });
+      const status = info.playability_status?.status ?? 'UNKNOWN';
+      attempts.push({ source: `youtubei.js(${client})`, status, is_live: info.basic_info.is_live });
+
+      if (info.basic_info.is_live && info.streaming_data?.hls_manifest_url) {
+        return res.json({
+          videoId: id,
+          title: info.basic_info.title,
+          channel: info.basic_info.author,
+          isLive: true,
+          hlsUrl: info.streaming_data.hls_manifest_url,
+          viewers: info.basic_info.view_count,
+          source: `youtubei.js(${client})`,
+        });
+      }
+    } catch (err) {
+      attempts.push({ source: `youtubei.js(${client})`, error: err.message });
+    }
+  }
+
+  // どれもダメだった場合、デバッグ情報ごと返す
+  return res.json({ videoId: id, isLive: false, debug: attempts });
 });
+
 
 
 // GET /api/comments/:id
